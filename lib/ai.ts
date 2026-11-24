@@ -1,4 +1,5 @@
-// lib/ai.ts - Enhanced for structured AI calls
+// lib/ai.ts
+import { OpenAI } from "openai";
 
 interface AICommandResponse {
   intent: 'clean_data' | 'build_report' | 'unknown';
@@ -7,30 +8,22 @@ interface AICommandResponse {
 }
 
 export async function interpretCommand(command: string, context: any): Promise<AICommandResponse> {
-  // In a real implementation, you would call OpenAI/Anthropic API here
-  // const completion = await openai.chat.completions.create({...});
-  
-  console.log('Interpreting:', command, 'Context:', context);
-
-  // Mocking the intent detection based on the prompt's requirements
-  const cmd = command.toLowerCase();
-  
-  if (cmd.includes('clean') || cmd.includes('linis')) {
-    return {
-      intent: 'clean_data',
-      parameters: { trim: true, normalizeDates: true },
-      confidence: 0.95
-    };
-  }
-  
-  if (cmd.includes('report') || cmd.includes('dashboard')) {
-    return {
-      intent: 'build_report',
-      parameters: { period: 'weekly' },
-      confidence: 0.9
-    };
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn("OPENAI_API_KEY not set, using mock AI");
+    return { intent: 'clean_data', parameters: { trim: true }, confidence: 0.9 };
   }
 
-  return { intent: 'unknown', parameters: {}, confidence: 0 };
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  
+  // Real implementation would look like:
+  // const completion = await openai.chat.completions.create({
+  //   model: "gpt-4o",
+  //   messages: [{ role: "user", content: `Interpret this command: ${command}` }],
+  //   response_format: { type: "json_object" }
+  // });
+  
+  return { intent: 'clean_data', parameters: { trim: true }, confidence: 0.9 };
 }
+
+
 
