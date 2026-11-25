@@ -19,6 +19,11 @@ export const env = {
   // Optional AI provider for command interpretation. Deterministic parser is
   // always used for execution; AI only proposes intent/parameters.
   openaiApiKey: process.env.OPENAI_API_KEY || "",
+  // OmniRoute LLM gateway (OpenAI-compatible) for conversational replies.
+  // Set OMNIROUTE_BASE_URL to your OmniRoute instance, e.g. http://localhost:20128/v1
+  omniRouteBaseUrl: process.env.OMNIROUTE_BASE_URL || "",
+  omniRouteApiKey: process.env.OMNIROUTE_API_KEY || "",
+  omniRouteModel: process.env.OMNIROUTE_MODEL || "",
   // Authorized sender for access-request emails (optional; copy-paste fallback).
   emailSender: process.env.EMAIL_SENDER || "",
 };

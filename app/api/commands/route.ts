@@ -12,17 +12,33 @@ import { db } from "@/db";
 import { jobs } from "@/db/schema";
 import { desc } from "drizzle-orm";
 import { getSessionEmail } from "@/lib/auth";
+import { converse } from "@/lib/converse";
+import { describeResult } from "@/lib/reply";
+import { chatReply } from "@/lib/llm";
 
 export const dynamic = "force-dynamic";
+
+function respond(data: any) {
+  return NextResponse.json({ ...data, reply: describeResult(data) });
+}
 
 export async function POST(req: Request) {
   try {
     const email = await getSessionEmail();
     if (!email) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
 
-    const { command, workbookUrl, tab } = await req.json();
+    const { command, workbookUrl, tab, history } = await req.json();
+    const chatHistory = Array.isArray(history) ? history : [];
     if (!command || typeof command !== "string") {
       return NextResponse.json({ error: "command is required" }, { status: 400 });
+    }
+
+    // Chat-style messages (greetings, help, thanks) are handled conversationally.
+    // OmniRoute LLM gets first crack for a natural reply; deterministic fallback.
+    const chat = converse(command);
+    if (chat) {
+      const llm = await chatReply(command, chatHistory);
+      return respond({ type: "chat", reply: llm || chat });
     }
 
     const action = parseCommand(command);
@@ -38,7 +54,7 @@ export async function POST(req: Request) {
           period: period || undefined,
           skipWrite: action.type === "clean_sheet",
         });
-        return NextResponse.json(res);
+        return respond(res);
       }
 
       case "build_dashboard": {
@@ -46,25 +62,25 @@ export async function POST(req: Request) {
           command, workbookUrl: action.workbookUrl || workbookUrl, tab,
           period: parsePeriod(command) || undefined,
         });
-        return NextResponse.json(res);
+        return respond(res);
       }
 
       case "latest_match":
       case "nth_match":
       case "formula": {
         const formulas = await buildFormulas(command, action);
-        return NextResponse.json({ type: "formula", formulas });
+        return respond({ type: "formula", formulas });
       }
 
       case "job_status": {
         const status = await jobStatus(action.jobId);
-        return NextResponse.json({ type: "job_status", status });
+        return respond({ type: "job_status", status });
       }
 
       case "remember_workflow": {
         const last = (await db.select().from(jobs).orderBy(desc(jobs.createdAt)).limit(1))[0];
         if (!last || last.status !== "completed") {
-          return NextResponse.json({ type: "remember_workflow", error: "No completed job to save yet. Run a hub report first." });
+          return respond({ type: "remember_workflow", error: "No completed job to save yet. Run a hub report first." });
         }
         const wf = await saveWorkflow({
           name: `Workflow from job #${last.id}`,
@@ -77,14 +93,14 @@ export async function POST(req: Request) {
             result: last.result,
           },
         });
-        return NextResponse.json({ type: "remember_workflow", workflow: wf, message: `Saved workflow "${wf.name}" (v${wf.version}). Say "same as last time" to reuse it.` });
+        return respond({ type: "remember_workflow", workflow: wf, message: `Saved workflow "${wf.name}" (v${wf.version}). Say "same as last time" to reuse it.` });
       }
 
       case "same_as_last_time": {
         const src = await resolveWorkbook(workbookUrl);
-        if (!src) return NextResponse.json({ type: "same_as_last_time", error: "Which workbook? Provide the Sheet URL." });
+        if (!src) return respond({ type: "same_as_last_time", error: "Which workbook? Provide the Sheet URL." });
         const wf = await findReusableWorkflow(src.id);
-        if (!wf) return NextResponse.json({ type: "same_as_last_time", error: "No saved workflow matches this workbook scope." });
+        if (!wf) return respond({ type: "same_as_last_time", error: "No saved workflow matches this workbook scope." });
         const def = wf.definition as any;
         const res = await runHubReport({
           command: `same as last time (workflow #${wf.id})`,
@@ -92,7 +108,7 @@ export async function POST(req: Request) {
           tab: def?.result?.sourceTab,
           period: def?.period || parsePeriod(command) || undefined,
         });
-        return NextResponse.json({ type: "same_as_last_time", workflow: wf, ...res });
+        return respond({ type: "same_as_last_time", workflow: wf, ...res });
       }
 
       case "correct": {
@@ -104,18 +120,22 @@ export async function POST(req: Request) {
           previous: { note: "current behavior", command },
           proposed: { correction: action.correction },
         });
-        return NextResponse.json({
+        return respond({
           type: "correct",
           correction: corr,
           message: "Correction recorded. Review it under Rules to use once, approve for this workbook, or approve globally.",
         });
       }
 
-      default:
-        return NextResponse.json({
+      default: {
+        // Unrecognized input: let the LLM answer conversationally if available.
+        const llm = await chatReply(command, chatHistory);
+        if (llm) return respond({ type: "chat", reply: llm });
+        return respond({
           type: "unknown",
-          message: "I didn't understand that. Try: 'clean this raw data and build this week's hub report', 'show job status', 'find latest matching entry', or 'Shawn, remember this process'.",
+          message: "Hmm, I didn't quite get that. Try \"clean this raw data and build this week's hub report\", \"show job status\", \"find latest matching entry\", or ask me \"what can you do\".",
         });
+      }
     }
   } catch (e: any) {
     console.error("commands error", e);

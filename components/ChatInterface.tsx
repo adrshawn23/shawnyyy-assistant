@@ -34,7 +34,7 @@ export default function ChatInterface() {
   const [input, setInput] = useState("");
   const [workbookUrl, setWorkbookUrl] = useState("");
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Shawn ready. Try: \"clean this raw data and build this week's hub report\" (demo mode uses sample data)." },
+    { role: "assistant", content: "Hi! I'm Shawn. Ask me to clean a sheet, build a hub report, find formulas, or just say \"what can you do\". (Demo mode uses sample data.)" },
   ]);
   const [busy, setBusy] = useState(false);
 
@@ -48,10 +48,15 @@ export default function ChatInterface() {
       const res = await fetch("/api/commands", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: text, workbookUrl: workbookUrl || undefined }),
+        body: JSON.stringify({
+          command: text,
+          workbookUrl: workbookUrl || undefined,
+          history: messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+        }),
       });
-      const data = await res.json();
-      setMessages((m) => [...m, { role: "assistant", content: summarize(data) }]);
+      const data: any = await res.json();
+      const replyText: string = data.reply || summarize(data);
+      setMessages((m) => [...m, { role: "assistant", content: replyText }]);
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", content: `Request failed: ${e?.message}` }]);
     }
@@ -86,7 +91,7 @@ export default function ChatInterface() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="SEND COMMAND (English or Bisaya)..."
+          placeholder="Message Shawn..."
           className="flex-1 bg-[#111820] border border-[#1e3a4e] p-3 rounded-xl text-[#00f2ff] font-mono focus:outline-none focus:border-[#00f2ff]"
         />
         <button onClick={send} disabled={busy} className="bg-[#00f2ff] text-[#0a0f14] p-3 rounded-xl hover:bg-white transition-all disabled:opacity-50">
