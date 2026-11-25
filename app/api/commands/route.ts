@@ -145,14 +145,17 @@ export async function POST(req: Request) {
 
 async function buildFormulas(command: string, action: any) {
   const urlMatch = command.match(/https?:\/\/[^\s]+/);
-  let spreadsheetId = "demo-daily-entry";
+  let spreadsheetId = isDemo() ? "demo-daily-entry" : "";
   const tab = "Daily Entry";
   if (urlMatch) {
     const sid = extractSpreadsheetId(urlMatch[0]);
     if (sid) spreadsheetId = sid;
   }
+  if (!spreadsheetId) {
+    return [{ kind: "error", description: "Which sheet? Please paste the Google Sheets URL.", steps: [] }];
+  }
 
-  const backend = getBackend();
+  const backend = await getBackend();
   let headers: string[] = [];
   try {
     const grid = await backend.readValues(spreadsheetId, `${tab}!A1:Z200`);

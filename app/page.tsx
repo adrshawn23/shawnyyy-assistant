@@ -29,6 +29,7 @@ export default async function CommandCenter() {
             </p>
           </div>
           <nav className="flex gap-8 text-sm font-bold tracking-widest uppercase text-[#1e3a4e]">
+            <Link href="/drive" className="hover:text-[#00f2ff] transition-colors">Drive</Link>
             <Link href="/access" className="hover:text-[#00f2ff] transition-colors">Access</Link>
             <Link href="/data-review" className="hover:text-[#00f2ff] transition-colors">Data Review</Link>
             <Link href="/dashboard" className="hover:text-[#00f2ff] transition-colors">Dashboard</Link>

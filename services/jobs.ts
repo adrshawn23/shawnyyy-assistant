@@ -139,7 +139,7 @@ export async function runHubReport(input: HubReportInput) {
     const mappingRules = await getActiveRules(src.id, "mapping");
     const savedMapping = mappingRules[0]?.definition as { mapping?: ColumnMapping; headerSignature?: string } | undefined;
 
-    const backend = getBackend();
+    const backend = await getBackend();
     const tab = input.tab || "Raw Data";
     const grid = await backend.readValues(src.spreadsheetId, `${tab}!A1:Z5000`);
     if (grid.length < 2) throw new Error(`Tab "${tab}" has no data rows.`);
@@ -252,7 +252,7 @@ async function writeReport(
   period: Period,
   sourceTab: string
 ) {
-  const backend = getBackend();
+  const backend = await getBackend();
   const clean = rows.filter((r) => !r.excluded);
   const flagged = rows.filter((r) => r.excluded);
 

@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { env, isDemo } from "./env";
 import { demoRead, demoWrite, demoMeta } from "./demo-data";
+import { getUserOAuthClient, oauthConfigured } from "./oauth";
 
 export function extractSpreadsheetId(url: string): string | null {
   const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/) || url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -20,6 +21,7 @@ export function serviceAccountEmail(): string {
 // ---------- Google Sheets via company service account ----------
 
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
+let driveClient: ReturnType<typeof google.drive> | null = null;
 
 function getServiceAccountAuth() {
   const raw = env.serviceAccountJson;
@@ -35,12 +37,30 @@ function getServiceAccountAuth() {
   });
 }
 
-function getSheets() {
+// Auth resolution: prefer the connected user's OAuth tokens (their own Drive),
+// fall back to the company service account.
+async function getAuth(): Promise<any> {
+  if (oauthConfigured()) {
+    const user = await getUserOAuthClient();
+    if (user) return user;
+  }
+  return getServiceAccountAuth();
+}
+
+async function getSheets() {
   if (isDemo()) return null;
   if (!sheetsClient) {
-    sheetsClient = google.sheets({ version: "v4", auth: getServiceAccountAuth() });
+    sheetsClient = google.sheets({ version: "v4", auth: await getAuth() });
   }
   return sheetsClient;
+}
+
+export async function getDrive() {
+  if (isDemo()) return null;
+  if (!driveClient) {
+    driveClient = google.drive({ version: "v3", auth: await getAuth() });
+  }
+  return driveClient;
 }
 
 export type SheetValues = string[][];
@@ -51,8 +71,8 @@ export interface SheetBackend {
   getMeta(spreadsheetId: string): Promise<{ title: string; tabs: string[] }>;
 }
 
-// Real backend (service account) or demo backend (in-memory sample data).
-export function getBackend(): SheetBackend {
+// Real backend (OAuth user or service account) or demo backend (sample data).
+export async function getBackend(): Promise<SheetBackend> {
   if (isDemo()) {
     return {
       readValues: (id, range) => demoRead(id, range),
@@ -60,7 +80,7 @@ export function getBackend(): SheetBackend {
       getMeta: (id) => demoMeta(id),
     };
   }
-  const sheets = getSheets()!;
+  const sheets = (await getSheets())!;
   return {
     async readValues(spreadsheetId, range) {
       const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
@@ -97,7 +117,7 @@ export async function verifyViewerAccess(spreadsheetId: string): Promise<VerifyR
     return { result: "success", detail: "Demo mode: simulated Viewer access verified." };
   }
   try {
-    const sheets = getSheets()!;
+    const sheets = (await getSheets())!;
     await sheets.spreadsheets.values.get({ spreadsheetId, range: "A1:A1" });
     return { result: "success", detail: "Read succeeded under Shawn's service account (Viewer confirmed)." };
   } catch (e: any) {
@@ -118,14 +138,24 @@ export async function verifyEditorAccess(spreadsheetId: string): Promise<VerifyR
     return { result: "success", detail: "Demo mode: simulated Editor access verified." };
   }
   try {
-    const auth = getServiceAccountAuth();
+    // Identity depends on which auth is active: connected user (OAuth) or service account.
+    let me = serviceAccountEmail();
+    let isUserOAuth = false;
+    if (oauthConfigured()) {
+      const { getStoredTokens } = await import("./oauth");
+      const stored = await getStoredTokens();
+      if (stored?.accessToken) {
+        me = stored.email || me;
+        isUserOAuth = true;
+      }
+    }
+    const auth = await getAuth();
     const drive = google.drive({ version: "v3", auth });
     const res = await drive.permissions.list({
       fileId: spreadsheetId,
       fields: "permissions(emailAddress,role)",
       supportsAllDrives: true,
     });
-    const me = serviceAccountEmail();
     const perm = (res.data.permissions || []).find(
       (p) => p.emailAddress?.toLowerCase() === me.toLowerCase()
     );
@@ -133,9 +163,9 @@ export async function verifyEditorAccess(spreadsheetId: string): Promise<VerifyR
       return { result: "success", detail: `Drive permission '${perm.role}' confirmed for ${me}.` };
     }
     if (perm) {
-      return { result: "denied", detail: `Service account has role '${perm.role}' — Editor required.` };
+      return { result: "denied", detail: `${isUserOAuth ? "Connected account" : "Service account"} has role '${perm.role}' — Editor required.` };
     }
-    return { result: "denied", detail: "Service account has no explicit permission on this workbook." };
+    return { result: "denied", detail: `${isUserOAuth ? "Connected account" : "Service account"} has no explicit permission on this workbook.` };
   } catch (e: any) {
     const code = e?.code ?? e?.response?.status;
     const reason = e?.errors?.[0]?.reason || e?.message || String(e);
