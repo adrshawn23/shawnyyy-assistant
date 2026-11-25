@@ -13,6 +13,7 @@ export type CommandAction =
   | { type: "remember_workflow" }
   | { type: "same_as_last_time" }
   | { type: "correct"; correction: string }
+  | { type: "drive_files"; query?: string }
   | { type: "unknown"; raw: string };
 
 const CLEAN_RE = /(clean|linis|limpyo|hugas|i-?clean)/i;
@@ -24,6 +25,7 @@ const STATUS_RE = /(job status|status|unsa na|progress)/i;
 const REMEMBER_RE = /(remember|hinumdomi|sulod|i-?save)/i;
 const SAME_RE = /(same as last|pareho|same process|last time)/i;
 const CORRECT_RE = /(instead|dapat|seharusnya|correct|fix|ayaw|himuon)/i;
+const FILES_RE = /(my files?|list (my )?files?|what files?|file name|sample (file|name)|unsay (ang )?files?|ngalan sa file|drive)/i;
 
 export function parseCommand(raw: string): CommandAction {
   const cmd = raw.trim();
@@ -49,6 +51,9 @@ export function parseCommand(raw: string): CommandAction {
   if (FORMULA_RE.test(cmd)) return { type: "formula", raw: cmd };
   if (REPORT_RE.test(cmd) && (CLEAN_RE.test(cmd) || /report|dashboard/i.test(cmd))) {
     return { type: "hub_report", workbookUrl: extractUrl(cmd) };
+  }
+  if (FILES_RE.test(cmd) && !/clean|report|formula|match/i.test(cmd)) {
+    return { type: "drive_files", query: cmd.match(/"([^"]+)"/)?.[1] };
   }
   if (CLEAN_RE.test(cmd)) return { type: "clean_sheet", workbookUrl: extractUrl(cmd) };
   if (/dashboard/i.test(cmd)) return { type: "build_dashboard", workbookUrl: extractUrl(cmd) };

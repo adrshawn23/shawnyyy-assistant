@@ -20,7 +20,7 @@ export function omniRouteEnabled(): boolean {
   return Boolean(env.omniRouteBaseUrl);
 }
 
-export async function chatReply(userMessage: string, history: { role: string; content: string }[] = []): Promise<string | null> {
+export async function chatReply(userMessage: string, history: { role: string; content: string }[] = [], context?: string): Promise<string | null> {
   if (!omniRouteEnabled()) return null;
   try {
     const base = env.omniRouteBaseUrl.replace(/\/$/, "");
@@ -33,7 +33,7 @@ export async function chatReply(userMessage: string, history: { role: string; co
       body: JSON.stringify({
         model: env.omniRouteModel || undefined,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: SYSTEM_PROMPT + (context ? `\n\nContext about the user's files:\n${context}` : "") },
           ...history.slice(-10),
           { role: "user", content: userMessage },
         ],

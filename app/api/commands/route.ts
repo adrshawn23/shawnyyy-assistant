@@ -22,6 +22,24 @@ function respond(data: any) {
   return NextResponse.json({ ...data, reply: describeResult(data) });
 }
 
+// Cached list of the user's recent Drive files, injected into LLM context so
+// Shawn can answer questions about their files naturally.
+let driveContextCache: { at: number; text: string } | null = null;
+async function driveContext(): Promise<string> {
+  if (driveContextCache && Date.now() - driveContextCache.at < 5 * 60 * 1000) return driveContextCache.text;
+  try {
+    const { listDriveFiles } = await import("@/services/drive");
+    const { files } = await listDriveFiles({ pageSize: 30 });
+    const text = files.length
+      ? files.map((f) => `- ${f.name} (${f.mimeType.includes("spreadsheet") ? "Google Sheet" : f.mimeType.includes("document") ? "Google Doc" : "file"})`).join("\n")
+      : "";
+    driveContextCache = { at: Date.now(), text };
+    return text;
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const email = await getSessionEmail();
@@ -92,6 +110,25 @@ export async function POST(req: Request) {
         return respond({ type: "formula", formulas });
       }
 
+      case "drive_files": {
+        try {
+          const { listDriveFiles } = await import("@/services/drive");
+          const { files } = await listDriveFiles({ query: action.query, pageSize: 15 });
+          if (!files.length) {
+            return respond({ type: "drive_files", files: [], message: "I don't see any files matching that on your Drive." });
+          }
+          return respond({
+            type: "drive_files",
+            files: files.map((f) => ({ name: f.name, type: f.mimeType, modified: f.modifiedTime })),
+            message: files.length === 1
+              ? `Here's one: "${files[0].name}"`
+              : `Here are ${files.length} files: ${files.slice(0, 5).map((f) => `"${f.name}"`).join(", ")}${files.length > 5 ? "…" : ""}`,
+          });
+        } catch (e: any) {
+          return respond({ type: "drive_files", error: e?.message || "Could not reach your Drive.", message: "I couldn't reach your Drive right now." });
+        }
+      }
+
       case "job_status": {
         const status = await jobStatus(action.jobId);
         return respond({ type: "job_status", status });
@@ -149,7 +186,7 @@ export async function POST(req: Request) {
 
       default: {
         // Unrecognized input: let the LLM answer conversationally if available.
-        const llm = await chatReply(command, chatHistory);
+        const llm = await chatReply(command, chatHistory, await driveContext());
         if (llm) return respond({ type: "chat", reply: llm });
         return respond({
           type: "unknown",
