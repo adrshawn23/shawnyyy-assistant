@@ -39,7 +39,7 @@ function getServiceAccountAuth() {
 
 // Auth resolution: prefer the connected user's OAuth tokens (their own Drive),
 // fall back to the company service account.
-async function getAuth(): Promise<any> {
+export async function getAuth(): Promise<any> {
   if (oauthConfigured()) {
     const user = await getUserOAuthClient();
     if (user) return user;

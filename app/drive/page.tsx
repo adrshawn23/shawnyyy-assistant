@@ -34,6 +34,46 @@ function DrivePageInner() {
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<{ file: DriveFile; data: Analysis } | null>(null);
   const [notice, setNotice] = useState("");
+  const [brain, setBrain] = useState<{ brainRules: number; byType: Record<string, number> } | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const loadBrain = async () => {
+    try {
+      const res = await fetch("/api/brain");
+      const data = await res.json();
+      if (!data.error) setBrain(data);
+    } catch { /* non-fatal */ }
+  };
+
+  const scanBrain = async () => {
+    setScanning(true);
+    setNotice("Scanning all Google Sheets and learning... this can take a few minutes.");
+    try {
+      await fetch("/api/brain", { method: "POST" });
+      // Poll until the background scan finishes.
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const res = await fetch("/api/brain");
+        const data = await res.json();
+        if (!data.scanning) {
+          if (data.lastResult) {
+            const r = data.lastResult;
+            setNotice(`Brain scan complete: ${r.sheetsScanned} sheets scanned, ${r.rulesCreated + r.rulesUpdated} rules learned${r.errors.length ? `, ${r.errors.length} errors` : ""}.`);
+          } else if (data.lastError) {
+            setNotice(`Brain scan failed: ${data.lastError}`);
+          }
+          setBrain(data);
+          setScanning(false);
+          return;
+        }
+      }
+      setNotice("Scan still running — check back shortly.");
+      setScanning(false);
+    } catch (e: any) {
+      setNotice(e?.message || "Brain scan failed");
+      setScanning(false);
+    }
+  };
 
   const loadStatus = async () => {
     const res = await fetch("/api/drive?status=1");
@@ -61,6 +101,7 @@ function DrivePageInner() {
   useEffect(() => {
     (async () => {
       const s = await loadStatus();
+      loadBrain();
       if (s?.connected) loadFiles();
       const connected = params.get("connected");
       const error = params.get("error");
@@ -116,6 +157,22 @@ function DrivePageInner() {
         </div>
 
         {notice && <div className="bg-[#0a0f14] border border-[#1e3a4e] rounded-xl p-3 text-xs font-mono text-[#00f2ff]">{notice}</div>}
+
+        {status?.connected && (
+          <div className="bg-[#0a0f14] border border-[#1e3a4e] rounded-2xl p-4 flex items-center justify-between">
+            <div className="text-xs font-mono text-zinc-400">
+              <span className="text-[#00f2ff] font-bold">SHAWN'S BRAIN</span>
+              {brain ? ` — ${brain.brainRules} rules learned (${Object.entries(brain.byType).map(([k, v]) => `${k}:${v}`).join(", ")})` : " — not scanned yet"}
+            </div>
+            <button
+              onClick={scanBrain}
+              disabled={scanning}
+              className="bg-[#00f2ff] text-[#0a0f14] font-bold text-xs px-4 py-2 rounded-lg hover:bg-white transition-all disabled:opacity-50"
+            >
+              {scanning ? "SCANNING..." : "SCAN & LEARN"}
+            </button>
+          </div>
+        )}
 
         {status && !status.oauthConfigured && (
           <div className="bg-[#0a0f14] border border-yellow-900/50 rounded-xl p-4 text-sm font-mono text-yellow-300">
