@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly",
-  "https://www.googleapis.com/auth/spreadsheets.readonly",
+  "https://www.googleapis.com/auth/spreadsheets",
 ];
 
 export function oauthConfigured(): boolean {

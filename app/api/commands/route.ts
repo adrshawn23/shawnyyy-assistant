@@ -47,9 +47,11 @@ export async function POST(req: Request) {
       case "hub_report":
       case "clean_sheet": {
         const period = parsePeriod(command);
+        const urls = command.match(/https?:\/\/[^\s]+/g) || [];
         const res = await runHubReport({
           command,
-          workbookUrl: action.workbookUrl || workbookUrl,
+          workbookUrl: action.workbookUrl || workbookUrl || urls[0],
+          reportingUrl: urls[1] || undefined,
           tab,
           period: period || undefined,
           skipWrite: action.type === "clean_sheet",
@@ -69,6 +71,24 @@ export async function POST(req: Request) {
       case "nth_match":
       case "formula": {
         const formulas = await buildFormulas(command, action);
+        // "apply/write/set ... formula" → actually write formulas into the sheet.
+        if (/\b(apply|write|set|put|insert)\b/i.test(command) && !isDemo()) {
+          const urlMatch = command.match(/https?:\/\/[^\s]+/);
+          const sid = urlMatch ? extractSpreadsheetId(urlMatch[0]) : null;
+          if (sid) {
+            const backend = await getBackend();
+            const written: string[] = [];
+            for (const f of formulas) {
+              for (const step of f.steps || []) {
+                if (step.formula && step.pasteCell) {
+                  await backend.writeValues(sid, `Daily Entry!${step.pasteCell}`, [[step.formula]]);
+                  written.push(`${step.pasteCell}: ${step.formula.slice(0, 60)}…`);
+                }
+              }
+            }
+            return respond({ type: "formula_applied", formulas, written, message: `Applied ${written.length} formula(s) to the sheet.` });
+          }
+        }
         return respond({ type: "formula", formulas });
       }
 

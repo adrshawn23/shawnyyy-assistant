@@ -42,7 +42,7 @@ export async function resolveWorkbook(urlOrId?: string): Promise<ResolvedWorkboo
   return { id: wb.id, spreadsheetId: wb.spreadsheetId!, url: wb.url, name: wb.name, isDemo: wb.isDemo };
 }
 
-async function resolveReportingWorkbook(): Promise<ResolvedWorkbook | null> {
+async function resolveReportingWorkbook(reportingUrl?: string): Promise<ResolvedWorkbook | null> {
   if (isDemo()) {
     const all = await db.select().from(workbooks);
     const rep = all.find((w) => w.spreadsheetId === "demo-hub-report")
@@ -54,6 +54,20 @@ async function resolveReportingWorkbook(): Promise<ResolvedWorkbook | null> {
         isDemo: true,
       }).returning())[0];
     return { id: rep.id, spreadsheetId: rep.spreadsheetId!, url: rep.url, name: rep.name, isDemo: true };
+  }
+  // Explicit reporting workbook URL wins (user's own connected Drive).
+  if (reportingUrl) {
+    const sid = extractSpreadsheetId(reportingUrl) || reportingUrl;
+    let wb = (await db.select().from(workbooks).where(eq(workbooks.spreadsheetId, sid)).limit(1))[0];
+    if (!wb) {
+      [wb] = await db.insert(workbooks).values({
+        spreadsheetId: sid,
+        url: reportingUrl,
+        name: null,
+        isDemo: false,
+      }).returning();
+    }
+    return { id: wb.id, spreadsheetId: wb.spreadsheetId!, url: wb.url, name: wb.name, isDemo: wb.isDemo };
   }
   // Reporting workbook must be a separately authorized workbook with an
   // approved access request (role=editor). Pick the most recent verified one
@@ -68,7 +82,14 @@ async function resolveReportingWorkbook(): Promise<ResolvedWorkbook | null> {
 }
 
 // Check that Shawn has verified access before use. Re-verify on every run.
+// When the user's own Google account is connected via OAuth, their Drive files
+// are trusted directly — no access-request ceremony needed.
 async function ensureAccess(workbookId: number, need: "viewer" | "editor") {
+  const { getStoredTokens, oauthConfigured } = await import("@/lib/oauth");
+  if (oauthConfigured()) {
+    const stored = await getStoredTokens();
+    if (stored?.accessToken) return; // connected user's own Drive
+  }
   const reqs = await db.select().from(accessRequests).where(
     and(eq(accessRequests.workbookId, workbookId), eq(accessRequests.status, "verified"))
   );
@@ -214,7 +235,7 @@ export async function runHubReport(input: HubReportInput) {
     }
 
     // Write to reporting workbook — only after reconciliation passes.
-    const rep = input.skipWrite ? null : await resolveReportingWorkbook();
+    const rep = input.skipWrite ? null : await resolveReportingWorkbook(input.reportingUrl);
     let writeInfo: any = input.skipWrite ? { skipped: "clean-only job" } : { skipped: "no reporting workbook authorized" };
     if (rep && rep.id !== src.id) {
       await ensureAccess(rep.id, "editor");
