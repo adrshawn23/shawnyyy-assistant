@@ -35,13 +35,19 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Log job (Make workbookId optional)
-    await db.insert(jobs).values({
-      workbookId: workbookId || undefined, // Use undefined instead of null
+    // 3. Log job
+    const jobData: any = {
       command,
       status: 'completed',
       result: aiResult,
-    });
+    };
+    
+    // Only add workbookId if it was successfully extracted and exists
+    if (workbookId) {
+      jobData.workbookId = workbookId;
+    }
+
+    await db.insert(jobs).values(jobData);
 
     return NextResponse.json({ jobId: 'success', ...aiResult });
   } catch (error) {
