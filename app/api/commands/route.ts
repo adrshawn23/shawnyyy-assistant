@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     // 2. Perform action based on intent
     if (aiResult.intent === 'clean_data' && workbookUrl) {
       try {
-        const rawData = await fetchSheetData(workbookUrl, 'Sheet1!A:D');
+        const rawData = await fetchSheetData(workbookUrl, 'Sheet1!A:D', (session as any).accessToken);
         if (rawData) {
           cleanData(rawData);
         }

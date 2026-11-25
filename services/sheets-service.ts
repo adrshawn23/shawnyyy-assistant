@@ -1,10 +1,11 @@
 // services/sheets-service.ts
-import { sheets, extractSpreadsheetId } from '@/lib/google';
+import { getSheetsClient, extractSpreadsheetId } from '@/lib/google';
 
-export async function fetchSheetData(url: string, range: string) {
+export async function fetchSheetData(url: string, range: string, accessToken: string) {
   const spreadsheetId = extractSpreadsheetId(url);
   if (!spreadsheetId) throw new Error("Invalid spreadsheet URL");
 
+  const sheets = getSheetsClient(accessToken);
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range,
@@ -13,10 +14,11 @@ export async function fetchSheetData(url: string, range: string) {
   return response.data.values;
 }
 
-export async function writeSheetData(url: string, range: string, values: any[][]) {
+export async function writeSheetData(url: string, range: string, values: any[][], accessToken: string) {
   const spreadsheetId = extractSpreadsheetId(url);
   if (!spreadsheetId) throw new Error("Invalid spreadsheet URL");
 
+  const sheets = getSheetsClient(accessToken);
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range,
