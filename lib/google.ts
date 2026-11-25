@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 const auth = new google.auth.GoogleAuth({
   credentials: {
     client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    // Robustly handle newlines in the private key
     private_key: process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.replace(/\\n/g, '\n'),
   },
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -17,7 +18,6 @@ export function extractSpreadsheetId(url: string): string | null {
 
 export async function verifyWorkbookAccess(spreadsheetId: string): Promise<boolean> {
   try {
-    // A simple read of the spreadsheet metadata verifies Viewer access
     await sheets.spreadsheets.get({ spreadsheetId });
     return true;
   } catch (error) {
