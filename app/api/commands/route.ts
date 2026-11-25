@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     // 3. Log job (Make workbookId optional)
     await db.insert(jobs).values({
-      workbookId: workbookId, // Now null if not found
+      workbookId: workbookId || undefined, // Use undefined instead of null
       command,
       status: 'completed',
       result: aiResult,
