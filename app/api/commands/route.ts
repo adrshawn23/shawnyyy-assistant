@@ -5,9 +5,11 @@ import { jobs } from '@/db/schema';
 import { fetchSheetData } from '@/services/sheets-service';
 import { cleanData } from '@/services/data-processing';
 import { extractSpreadsheetId } from '@/lib/google';
+import { getServerSession } from "next-auth"; // Ensure correct import
 
 export async function POST(req: Request) {
   try {
+    const session = await getServerSession();
     const { command, workbookUrl } = await req.json();
 
     // 1. Interpret command
@@ -19,16 +21,18 @@ export async function POST(req: Request) {
       const id = extractSpreadsheetId(workbookUrl);
       if (id) {
         // In a real app, you would look up the ID in your 'workbooks' table here
-        // For now, we will treat it as null to avoid the FK error
       }
     }
 
     // 2. Perform action based on intent
-    if (aiResult.intent === 'clean_data' && workbookUrl) {
+    if (aiResult.intent === 'clean_data' && workbookUrl && session) {
       try {
-        const rawData = await fetchSheetData(workbookUrl, 'Sheet1!A:D', (session as any).accessToken);
-        if (rawData) {
-          cleanData(rawData);
+        const accessToken = (session as any)?.accessToken;
+        if (accessToken) {
+            const rawData = await fetchSheetData(workbookUrl, 'Sheet1!A:D', accessToken);
+            if (rawData) {
+              cleanData(rawData);
+            }
         }
       } catch (sheetError) {
         console.error("Sheet API error:", sheetError);
