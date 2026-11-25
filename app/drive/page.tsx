@@ -34,7 +34,7 @@ function DrivePageInner() {
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<{ file: DriveFile; data: Analysis } | null>(null);
   const [notice, setNotice] = useState("");
-  const [brain, setBrain] = useState<{ brainRules: number; byType: Record<string, number> } | null>(null);
+  const [brain, setBrain] = useState<{ brainRules: number; byType: Record<string, number>; scanning?: boolean; progress?: { done: number; total: number } | null } | null>(null);
   const [scanning, setScanning] = useState(false);
 
   const loadBrain = async () => {
@@ -55,6 +55,7 @@ function DrivePageInner() {
         await new Promise((r) => setTimeout(r, 5000));
         const res = await fetch("/api/brain");
         const data = await res.json();
+        setBrain(data);
         if (!data.scanning) {
           if (data.lastResult) {
             const r = data.lastResult;
@@ -159,18 +160,34 @@ function DrivePageInner() {
         {notice && <div className="bg-[#0a0f14] border border-[#1e3a4e] rounded-xl p-3 text-xs font-mono text-[#00f2ff]">{notice}</div>}
 
         {status?.connected && (
-          <div className="bg-[#0a0f14] border border-[#1e3a4e] rounded-2xl p-4 flex items-center justify-between">
-            <div className="text-xs font-mono text-zinc-400">
-              <span className="text-[#00f2ff] font-bold">SHAWN'S BRAIN</span>
-              {brain ? ` — ${brain.brainRules} rules learned (${Object.entries(brain.byType).map(([k, v]) => `${k}:${v}`).join(", ")})` : " — not scanned yet"}
+          <div className="bg-[#0a0f14] border border-[#1e3a4e] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-mono text-zinc-400">
+                <span className="text-[#00f2ff] font-bold">SHAWN'S BRAIN</span>
+                {brain ? ` — ${brain.brainRules} rules learned (${Object.entries(brain.byType).map(([k, v]) => `${k}:${v}`).join(", ")})` : " — not scanned yet"}
+              </div>
+              <button
+                onClick={scanBrain}
+                disabled={scanning}
+                className="bg-[#00f2ff] text-[#0a0f14] font-bold text-xs px-4 py-2 rounded-lg hover:bg-white transition-all disabled:opacity-50"
+              >
+                {scanning ? "SCANNING..." : "SCAN & LEARN"}
+              </button>
             </div>
-            <button
-              onClick={scanBrain}
-              disabled={scanning}
-              className="bg-[#00f2ff] text-[#0a0f14] font-bold text-xs px-4 py-2 rounded-lg hover:bg-white transition-all disabled:opacity-50"
-            >
-              {scanning ? "SCANNING..." : "SCAN & LEARN"}
-            </button>
+            {brain?.scanning && brain.progress && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-mono text-[#1e3a4e]">
+                  <span>SCANNING SHEETS</span>
+                  <span>{brain.progress.done}/{brain.progress.total} ({Math.round((brain.progress.done / Math.max(brain.progress.total, 1)) * 100)}%)</span>
+                </div>
+                <div className="h-1.5 bg-[#111820] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#00f2ff] transition-all duration-500"
+                    style={{ width: `${(brain.progress.done / Math.max(brain.progress.total, 1)) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 

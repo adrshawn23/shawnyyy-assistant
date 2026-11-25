@@ -146,15 +146,16 @@ async function upsertRule(def: {
 
 export interface BrainScanResult {
   sheetsScanned: number;
+  sheetsTotal: number;
   rulesCreated: number;
   rulesUpdated: number;
   errors: string[];
   learned: { sheet: string; rules: string[] }[];
 }
 
-export async function scanDriveBrain(): Promise<BrainScanResult> {
+export async function scanDriveBrain(onProgress?: (done: number, total: number) => void): Promise<BrainScanResult> {
   const sheets = await listAllSheets();
-  const result: BrainScanResult = { sheetsScanned: 0, rulesCreated: 0, rulesUpdated: 0, errors: [], learned: [] };
+  const result: BrainScanResult = { sheetsScanned: 0, sheetsTotal: sheets.length, rulesCreated: 0, rulesUpdated: 0, errors: [], learned: [] };
 
   for (const file of sheets) {
     try {
@@ -233,13 +234,20 @@ export async function scanDriveBrain(): Promise<BrainScanResult> {
     } catch (e: any) {
       result.errors.push(`${file.name}: ${e?.message || "failed"}`);
     }
+    onProgress?.(result.sheetsScanned + result.errors.length, result.sheetsTotal);
   }
 
   return result;
 }
 
 // Background scan state so the API can return immediately and the UI can poll.
-let scanState: { running: boolean; startedAt?: Date; lastResult?: BrainScanResult; lastError?: string } = { running: false };
+let scanState: {
+  running: boolean;
+  startedAt?: Date;
+  progress?: { done: number; total: number };
+  lastResult?: BrainScanResult;
+  lastError?: string;
+} = { running: false };
 
 export function getScanState() {
   return scanState;
@@ -248,7 +256,9 @@ export function getScanState() {
 export function startBrainScan(): { started: boolean } {
   if (scanState.running) return { started: false };
   scanState = { running: true, startedAt: new Date() };
-  scanDriveBrain()
+  scanDriveBrain((done, total) => {
+    scanState = { ...scanState, progress: { done, total } };
+  })
     .then((result) => { scanState = { running: false, lastResult: result }; })
     .catch((e) => { scanState = { running: false, lastError: e?.message || "scan failed" }; });
   return { started: true };

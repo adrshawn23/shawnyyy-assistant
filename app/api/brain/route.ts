@@ -14,6 +14,7 @@ export async function GET() {
   return NextResponse.json({
     ...status,
     scanning: scan.running,
+    progress: scan.progress || null,
     scanStartedAt: scan.startedAt || null,
     lastResult: scan.lastResult || null,
     lastError: scan.lastError || null,
