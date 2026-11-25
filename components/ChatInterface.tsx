@@ -21,7 +21,7 @@ export default function ChatInterface() {
     });
     const data = await res.json();
     
-    setMessages(prev => [...prev, { role: 'assistant', content: `ACTION: ${data.intent} (Confidence: ${data.confidence})` }]);
+    setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
   };
 
   return (
