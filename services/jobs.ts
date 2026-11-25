@@ -147,11 +147,32 @@ export async function runHubReport(input: HubReportInput) {
     const sig = headerSignature(headers);
     const dataRows = grid.slice(1).map((r) => r.map((c) => String(c ?? "")));
 
+    // Brain-learned mapping: header -> canonical field, learned from Drive scan.
+    // Fallback when no approved mapping rule matches this workbook's headers.
+    const brainMappingRule = mappingRules.find((r) => String(r.name || "").startsWith("Brain:"));
+    const brainMappingDef = brainMappingRule?.definition as
+      | { mapping?: { header: string; field: string }[] }
+      | undefined;
+    let brainMapping: ColumnMapping | null = null;
+    if (brainMappingDef?.mapping) {
+      const byField: Partial<Record<string, number>> = {};
+      for (const m of brainMappingDef.mapping) {
+        const idx = headers.findIndex((h) => h.trim().toLowerCase() === m.header.trim().toLowerCase());
+        if (idx >= 0) byField[m.field] = idx;
+      }
+      if (byField.trackingId != null && byField.hub != null && byField.status != null && byField.eventDate != null) {
+        brainMapping = { trackingId: byField.trackingId, hub: byField.hub, status: byField.status, eventDate: byField.eventDate };
+      }
+    }
+
     let mapping: ColumnMapping;
     let mappingSource = "detected";
     if (savedMapping?.mapping && savedMapping.headerSignature === sig) {
       mapping = savedMapping.mapping;
       mappingSource = "saved_rule";
+    } else if (brainMapping) {
+      mapping = brainMapping;
+      mappingSource = "brain_rule";
     } else {
       const detected = detectMapping(headers);
       if (!detected) {
@@ -210,7 +231,11 @@ export async function runHubReport(input: HubReportInput) {
       period,
       sourceTab: tab,
       freshness: new Date().toISOString(),
-      appliedRules: { mapping: mappingSource, cleaningRules: cleanRules.length },
+      appliedRules: {
+        mapping: mappingSource,
+        cleaningRules: cleanRules.length,
+        brainRules: mappingRules.filter((r) => String(r.name || "").startsWith("Brain:")).length,
+      },
     };
 
     await db.update(jobs).set({
