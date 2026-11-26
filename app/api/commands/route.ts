@@ -15,7 +15,7 @@ import { getSessionEmail } from "@/lib/auth";
 import { converse } from "@/lib/converse";
 import { describeResult } from "@/lib/reply";
 import { chatReply } from "@/lib/llm";
-import { logMessage, memoryContext, learnFromChats } from "@/lib/memory";
+import { logMessage, memoryContext, learnFromChats, maybeAutoLearn } from "@/lib/memory";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +52,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "command is required" }, { status: 400 });
     }
     await logMessage(email, "user", command, "command");
+    maybeAutoLearn(); // background: mines chats every 20 new messages
 
     // "learn from our chats" — mine conversation history for durable knowledge.
     if (/learn from (our|the|my) chats?|memorize/i.test(command)) {

@@ -4,8 +4,34 @@
 
 import { db } from "@/db";
 import { chatMessages, rules } from "@/db/schema";
-import { desc, gt, and, eq } from "drizzle-orm";
+import { desc, gt, and, eq, sql } from "drizzle-orm";
 import { chatReply } from "./llm";
+
+const AUTO_LEARN_EVERY = 20; // messages
+let learning = false;
+
+// Automatically mine chats for learnings once enough new messages accumulate.
+// Fire-and-forget — never blocks the user's request.
+export async function maybeAutoLearn() {
+  if (learning) return;
+  try {
+    // Find when we last learned (latest memory rule), count messages since.
+    const memRules = await db.select().from(rules).where(eq(rules.type, "memory"));
+    const lastLearn = memRules.length
+      ? new Date(Math.max(...memRules.map((r) => new Date(r.createdAt as any).getTime())))
+      : new Date(0);
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(chatMessages)
+      .where(gt(chatMessages.createdAt, lastLearn));
+    if (count < AUTO_LEARN_EVERY) return;
+    learning = true;
+    learnFromChats({ sinceDays: 30, maxMessages: 300 })
+      .then((r) => console.log(`[memory] auto-learn: ${r.message}`))
+      .catch((e) => console.error("[memory] auto-learn failed", e))
+      .finally(() => { learning = false; });
+  } catch { /* best-effort */ }
+}
 
 export async function logMessage(email: string | null, role: "user" | "assistant", content: string, kind?: string) {
   try {
