@@ -17,7 +17,7 @@ export type CommandAction =
   | { type: "unknown"; raw: string };
 
 const CLEAN_RE = /(clean|linis|limpyo|hugas|i-?clean)/i;
-const REPORT_RE = /(hub report|report|dashboard|buhat.*report|tubag)/i;
+const REPORT_RE = /(hub report|report|dashboard|summary|chart|graph|visuali[sz]ation|buhat.*report|tubag)/i;
 const LATEST_RE = /(latest|last|pinakabag-o|last match|most recent)/i;
 const NTH_RE = /(second|2nd|third|3rd|\d+(st|nd|rd|th))/i;
 const FORMULA_RE = /(formula|pormula|mag-?generate)/i;
@@ -49,8 +49,11 @@ export function parseCommand(raw: string): CommandAction {
     return { type: "nth_match", n: m ? parseInt(m[1]) : 2 };
   }
   if (FORMULA_RE.test(cmd)) return { type: "formula", raw: cmd };
-  if (REPORT_RE.test(cmd) && (CLEAN_RE.test(cmd) || /report|dashboard/i.test(cmd))) {
+  if (REPORT_RE.test(cmd) && (CLEAN_RE.test(cmd) || /report|dashboard|summary|chart|graph|visuali[sz]ation/i.test(cmd))) {
     return { type: "hub_report", workbookUrl: extractUrl(cmd) };
+  }
+  if (/\b(dashboard|summary|chart|graph)\b/i.test(cmd) && /\b(build|create|make|buhat|gawa|design|show|generate|i-?need|i-?want)\b/i.test(cmd)) {
+    return { type: "build_dashboard", workbookUrl: extractUrl(cmd) };
   }
   if (FILES_RE.test(cmd) && !/clean|report|formula|match/i.test(cmd)) {
     return { type: "drive_files", query: cmd.match(/"([^"]+)"/)?.[1] };
