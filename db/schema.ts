@@ -97,6 +97,17 @@ export const workflows = pgTable("workflows", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
+// Persistent chat memory: every user command and Shawn reply is stored so
+// conversations can be recalled and mined for learnings.
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  email: text("email"),
+  role: text("role").notNull(), // user | assistant
+  content: text("content").notNull(),
+  kind: text("kind"), // command type or "chat"
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 // Stored OAuth tokens for the connected Google account (Drive/Sheets access).
 export const oauthTokens = pgTable("oauth_tokens", {
   id: serial("id").primaryKey(),

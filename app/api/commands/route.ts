@@ -15,6 +15,7 @@ import { getSessionEmail } from "@/lib/auth";
 import { converse } from "@/lib/converse";
 import { describeResult } from "@/lib/reply";
 import { chatReply } from "@/lib/llm";
+import { logMessage, memoryContext, learnFromChats } from "@/lib/memory";
 
 export const dynamic = "force-dynamic";
 
@@ -50,13 +51,24 @@ export async function POST(req: Request) {
     if (!command || typeof command !== "string") {
       return NextResponse.json({ error: "command is required" }, { status: 400 });
     }
+    await logMessage(email, "user", command, "command");
+
+    // "learn from our chats" — mine conversation history for durable knowledge.
+    if (/learn from (our|the|my) chats?|memorize/i.test(command)) {
+      const res = await learnFromChats();
+      return respond({ type: "learn_chats", ...res });
+    }
 
     // Chat-style messages (greetings, help, thanks) are handled conversationally.
     // OmniRoute LLM gets first crack for a natural reply; deterministic fallback.
     const chat = converse(command);
     if (chat) {
-      const llm = await chatReply(command, chatHistory);
-      return respond({ type: "chat", reply: llm || chat });
+      const [ctx, mem] = await Promise.all([driveContext(), memoryContext()]);
+      const llm = await chatReply(command, chatHistory, [ctx, mem].filter(Boolean).join("\n"));
+      const reply = llm || chat;
+      await logMessage(email, "user", command, "chat");
+      await logMessage(email, "assistant", reply, "chat");
+      return respond({ type: "chat", reply });
     }
 
     const action = parseCommand(command);
@@ -186,8 +198,12 @@ export async function POST(req: Request) {
 
       default: {
         // Unrecognized input: let the LLM answer conversationally if available.
-        const llm = await chatReply(command, chatHistory, await driveContext());
-        if (llm) return respond({ type: "chat", reply: llm });
+        const [ctx, mem] = await Promise.all([driveContext(), memoryContext()]);
+        const llm = await chatReply(command, chatHistory, [ctx, mem].filter(Boolean).join("\n"));
+        if (llm) {
+          await logMessage(email, "assistant", llm, "chat");
+          return respond({ type: "chat", reply: llm });
+        }
         return respond({
           type: "unknown",
           message: "Hmm, I didn't quite get that. Try \"clean this raw data and build this week's hub report\", \"show job status\", \"find latest matching entry\", or ask me \"what can you do\".",
