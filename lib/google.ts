@@ -71,6 +71,35 @@ export interface SheetBackend {
   getMeta(spreadsheetId: string): Promise<{ title: string; tabs: string[] }>;
 }
 
+// ---------- Office file fallback (.xlsx/.xls/.csv on Drive) ----------
+// Google Sheets API rejects Office files; download via Drive and parse with SheetJS.
+
+async function readOfficeValues(spreadsheetId: string, range: string): Promise<SheetValues | null> {
+  try {
+    const drive = await getDrive();
+    if (!drive) return null;
+    const res = await drive.files.get(
+      { fileId: spreadsheetId, alt: "media", supportsAllDrives: true },
+      { responseType: "arraybuffer" }
+    );
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(res.data as ArrayBuffer, { type: "array" });
+    // Range looks like "Tab Name!A1:Z5000" — pick the named sheet, else first.
+    const sheetName = range.includes("!") ? range.split("!")[0].replace(/^'|'$/g, "") : wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName] || wb.Sheets[wb.SheetNames[0]];
+    if (!ws) return null;
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
+    return rows.map((r) => (r as unknown[]).map((c) => String(c ?? "")));
+  } catch {
+    return null;
+  }
+}
+
+function isOfficeFileError(e: any): boolean {
+  const msg = String(e?.message || e?.errors?.[0]?.message || "");
+  return /office file|not supported for this document/i.test(msg);
+}
+
 // Real backend (OAuth user or service account) or demo backend (sample data).
 export async function getBackend(): Promise<SheetBackend> {
   if (isDemo()) {
@@ -83,8 +112,16 @@ export async function getBackend(): Promise<SheetBackend> {
   const sheets = (await getSheets())!;
   return {
     async readValues(spreadsheetId, range) {
-      const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-      return (res.data.values || []) as SheetValues;
+      try {
+        const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+        return (res.data.values || []) as SheetValues;
+      } catch (e) {
+        if (isOfficeFileError(e)) {
+          const office = await readOfficeValues(spreadsheetId, range);
+          if (office) return office;
+        }
+        throw e;
+      }
     },
     async writeValues(spreadsheetId, range, values) {
       await sheets.spreadsheets.values.update({

@@ -37,8 +37,17 @@ export async function resolveWorkbook(urlOrId?: string): Promise<ResolvedWorkboo
   }
   if (!urlOrId) return null;
   const sid = extractSpreadsheetId(urlOrId) || urlOrId;
-  const wb = (await db.select().from(workbooks).where(eq(workbooks.spreadsheetId, sid)).limit(1))[0];
-  if (!wb) return null;
+  let wb = (await db.select().from(workbooks).where(eq(workbooks.spreadsheetId, sid)).limit(1))[0];
+  if (!wb) {
+    // Auto-register workbooks the user pastes — no prior access-request needed
+    // when their own Google account is connected (ensureAccess handles that).
+    [wb] = await db.insert(workbooks).values({
+      spreadsheetId: sid,
+      url: urlOrId.startsWith("http") ? urlOrId : `https://docs.google.com/spreadsheets/d/${sid}/edit`,
+      name: null,
+      isDemo: false,
+    }).returning();
+  }
   return { id: wb.id, spreadsheetId: wb.spreadsheetId!, url: wb.url, name: wb.name, isDemo: wb.isDemo };
 }
 
@@ -198,7 +207,8 @@ export async function runHubReport(input: HubReportInput) {
       const detected = detectMapping(headers);
       if (!detected) {
         await db.update(jobs).set({ status: "needs_input", error: "Could not detect required columns (Tracking ID, Hub, Status, Event Date).", updatedAt: new Date() }).where(eq(jobs.id, job.id));
-        return { status: "needs_input" as const, jobId: job.id, message: "I couldn't find Tracking ID / Hub / Status / Event Date columns. Which columns should I use?" };
+        const found = headers.filter(Boolean).slice(0, 15).join(", ");
+        return { status: "needs_input" as const, jobId: job.id, headers, message: `I couldn't find Tracking ID / Hub / Status / Event Date columns. Columns I see: ${found || "(none)"}. Tell me which columns to use, or which tab has the data.` };
       }
       mapping = detected;
       if (savedMapping?.headerSignature && savedMapping.headerSignature !== sig) {

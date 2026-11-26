@@ -26,6 +26,8 @@ function respond(data: any) {
 // Cached list of the user's recent Drive files, injected into LLM context so
 // Shawn can answer questions about their files naturally.
 let driveContextCache: { at: number; text: string } | null = null;
+// Last workbook URL the user pasted — reused when a command omits the URL.
+let lastWorkbookUrl: string | null = null;
 async function driveContext(): Promise<string> {
   if (driveContextCache && Date.now() - driveContextCache.at < 5 * 60 * 1000) return driveContextCache.text;
   try {
@@ -54,6 +56,18 @@ export async function POST(req: Request) {
     await logMessage(email, "user", command, "command");
     maybeAutoLearn(); // background: mines chats every 20 new messages
 
+    // Bare URL message: remember it as the working workbook.
+    const bareUrl = command.match(/^https?:\/\/\S+$/);
+    if (bareUrl) {
+      lastWorkbookUrl = bareUrl[0];
+      const wb = await resolveWorkbook(bareUrl[0]);
+      return respond({
+        type: "workbook_set",
+        workbook: wb ? { id: wb.id, name: wb.name, url: wb.url } : null,
+        message: wb ? `Got it — working on "${wb.name || wb.spreadsheetId}". What should I do with it?` : "I couldn't resolve that link.",
+      });
+    }
+
     // "learn from our chats" — mine conversation history for durable knowledge.
     if (/learn from (our|the|my) chats?|memorize/i.test(command)) {
       const res = await learnFromChats();
@@ -79,9 +93,11 @@ export async function POST(req: Request) {
       case "clean_sheet": {
         const period = parsePeriod(command);
         const urls = command.match(/https?:\/\/[^\s]+/g) || [];
+        const effectiveUrl = action.workbookUrl || workbookUrl || urls[0] || lastWorkbookUrl || undefined;
+        if (effectiveUrl) lastWorkbookUrl = effectiveUrl;
         const res = await runHubReport({
           command,
-          workbookUrl: action.workbookUrl || workbookUrl || urls[0],
+          workbookUrl: effectiveUrl,
           reportingUrl: urls[1] || undefined,
           tab,
           period: period || undefined,
@@ -91,8 +107,11 @@ export async function POST(req: Request) {
       }
 
       case "build_dashboard": {
+        const urls = command.match(/https?:\/\/[^\s]+/g) || [];
+        const effectiveUrl = action.workbookUrl || workbookUrl || urls[0] || lastWorkbookUrl || undefined;
+        if (effectiveUrl) lastWorkbookUrl = effectiveUrl;
         const res = await runHubReport({
-          command, workbookUrl: action.workbookUrl || workbookUrl, tab,
+          command, workbookUrl: effectiveUrl, tab,
           period: parsePeriod(command) || undefined,
         });
         return respond(res);
