@@ -34,6 +34,7 @@ export default async function CommandCenter() {
             <Link href="/data-review" className="hover:text-[#00f2ff] transition-colors">Data Review</Link>
             <Link href="/dashboard" className="hover:text-[#00f2ff] transition-colors">Dashboard</Link>
             <Link href="/rules" className="hover:text-[#00f2ff] transition-colors">Rules</Link>
+            <Link href="/users" className="hover:text-[#00f2ff] transition-colors">Users</Link>
           </nav>
         </header>
 

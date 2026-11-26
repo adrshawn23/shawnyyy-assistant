@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   if (!email || !password) {
     return NextResponse.json({ error: "email and password required" }, { status: 400 });
   }
-  if (!validLogin(email, password)) {
+  if (!(await validLogin(email, password))) {
     return NextResponse.json({ error: "Invalid credentials or domain" }, { status: 401 });
   }
   await createSession(email);

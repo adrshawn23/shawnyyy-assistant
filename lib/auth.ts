@@ -1,6 +1,9 @@
 import { cookies } from "next/headers";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac, timingSafeEqual, scryptSync, randomBytes } from "crypto";
 import { env } from "./env";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 const COOKIE = "shawn_session";
 const TTL_MS = 1000 * 60 * 60 * 12; // 12h
@@ -47,10 +50,35 @@ export async function getSessionEmail(): Promise<string | null> {
   }
 }
 
-export function validLogin(email: string, password: string): boolean {
-  if (!env.loginEmail || !env.loginPassword) return false;
-  if (env.companyDomain && !email.toLowerCase().endsWith("@" + env.companyDomain.toLowerCase())) {
-    return false;
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const candidate = scryptSync(password, salt, 64);
+  const expected = Buffer.from(hash, "hex");
+  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+}
+
+// Login: shared env credential OR a DB user account.
+export async function validLogin(email: string, password: string): Promise<boolean> {
+  const e = email.toLowerCase();
+  // Shared company credential (env) still works.
+  if (env.loginEmail && env.loginPassword && e === env.loginEmail.toLowerCase() && password === env.loginPassword) {
+    return true;
   }
-  return email.toLowerCase() === env.loginEmail.toLowerCase() && password === env.loginPassword;
+  // DB user accounts.
+  const user = (await db.select().from(users).where(eq(users.email, e)).limit(1))[0];
+  if (user?.passwordHash && verifyPassword(password, user.passwordHash)) return true;
+  return false;
+}
+
+export async function getSessionUser() {
+  const email = await getSessionEmail();
+  if (!email) return null;
+  return (await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1))[0] || null;
 }
