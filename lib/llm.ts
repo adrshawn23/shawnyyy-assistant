@@ -24,9 +24,10 @@ export function omniRouteEnabled(): boolean {
   return Boolean(env.omniRouteBaseUrl);
 }
 
-export async function chatReply(userMessage: string, history: { role: string; content: string }[] = [], context?: string): Promise<string | null> {
+export async function chatReply(userMessage: string, history: { role: string; content: string }[] = [], context?: string, systemOverride?: string): Promise<string | null> {
   if (!omniRouteEnabled()) return null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const system = systemOverride || SYSTEM_PROMPT;
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const base = env.omniRouteBaseUrl.replace(/\/$/, "");
       const res = await fetch(`${base}/chat/completions`, {
@@ -38,7 +39,7 @@ export async function chatReply(userMessage: string, history: { role: string; co
         body: JSON.stringify({
           model: env.omniRouteModel || undefined,
           messages: [
-            { role: "system", content: SYSTEM_PROMPT + (context ? `\n\nContext about the user's files:\n${context}` : "") },
+            { role: "system", content: system + (context ? `\n\nContext about the user's files:\n${context}` : "") },
             ...history.slice(-10),
             { role: "user", content: userMessage },
           ],
@@ -48,7 +49,7 @@ export async function chatReply(userMessage: string, history: { role: string; co
         signal: AbortSignal.timeout(30000),
       });
       if (res.status === 429 || res.status >= 500) {
-        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)));
         continue;
       }
       if (!res.ok) return null;
@@ -56,7 +57,7 @@ export async function chatReply(userMessage: string, history: { role: string; co
       const text = data?.choices?.[0]?.message?.content;
       return typeof text === "string" && text.trim() ? text.trim() : null;
     } catch {
-      if (attempt === 2) return null;
+      if (attempt === 3) return null;
       await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
     }
   }

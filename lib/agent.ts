@@ -28,6 +28,7 @@ When you have enough information or the task is done, reply with ONLY:
 {"answer": "your final reply to the user"}
 
 Rules:
+- NEVER reply with acknowledgments ("Got it", "Sure", "Okay") — immediately emit a tool call JSON or a final answer JSON.
 - Chain tools as needed: e.g. list_files → read_sheet → analyze → answer.
 - For analysis questions, read the sheet then summarize findings in "answer".
 - For "build/make/create a dashboard/report", use hub_report or write_sheet.
@@ -117,13 +118,18 @@ export async function agentRun(userMessage: string, extraContext?: string): Prom
   const actions: string[] = [];
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const context = [AGENT_PROMPT, extraContext].filter(Boolean).join("\n\n");
     const last = messages[messages.length - 1];
-    const raw = await chatReply(last.content, messages.slice(0, -1), context);
+    const raw = await chatReply(last.content, messages.slice(0, -1), extraContext, AGENT_PROMPT);
     if (!raw) return null;
 
     const parsed = parseJsonReply(raw);
     if (!parsed) {
+      if (actions.length === 0 && step < MAX_STEPS - 1) {
+        // Model replied in prose before acting — nudge it to use the JSON protocol.
+        messages.push({ role: "assistant", content: raw });
+        messages.push({ role: "user", content: "Respond with ONLY a JSON object: {\"tool\": ...} to take an action, or {\"answer\": ...} if you're done. No prose." });
+        continue;
+      }
       // LLM replied in plain text — treat as final answer.
       return { reply: raw, actions };
     }
