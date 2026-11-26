@@ -16,6 +16,7 @@ import { converse } from "@/lib/converse";
 import { describeResult } from "@/lib/reply";
 import { chatReply } from "@/lib/llm";
 import { logMessage, memoryContext, learnFromChats, maybeAutoLearn } from "@/lib/memory";
+import { agentRun } from "@/lib/agent";
 
 export const dynamic = "force-dynamic";
 
@@ -217,9 +218,16 @@ export async function POST(req: Request) {
       }
 
       default: {
-        // Unrecognized input: let the LLM answer conversationally if available.
+        // Unrecognized input: agent mode first — Shawn figures out and executes
+        // the steps itself (list files, read sheets, write, run reports).
         const [ctx, mem] = await Promise.all([driveContext(), memoryContext()]);
-        const llm = await chatReply(command, chatHistory, [ctx, mem].filter(Boolean).join("\n"));
+        const extra = [ctx, mem].filter(Boolean).join("\n");
+        const agent = await agentRun(command, extra || undefined);
+        if (agent?.reply) {
+          await logMessage(email, "assistant", agent.reply, "agent");
+          return respond({ type: "agent", reply: agent.reply, actions: agent.actions });
+        }
+        const llm = await chatReply(command, chatHistory, extra);
         if (llm) {
           await logMessage(email, "assistant", llm, "chat");
           return respond({ type: "chat", reply: llm });

@@ -26,31 +26,39 @@ export function omniRouteEnabled(): boolean {
 
 export async function chatReply(userMessage: string, history: { role: string; content: string }[] = [], context?: string): Promise<string | null> {
   if (!omniRouteEnabled()) return null;
-  try {
-    const base = env.omniRouteBaseUrl.replace(/\/$/, "");
-    const res = await fetch(`${base}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(env.omniRouteApiKey ? { Authorization: `Bearer ${env.omniRouteApiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: env.omniRouteModel || undefined,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT + (context ? `\n\nContext about the user's files:\n${context}` : "") },
-          ...history.slice(-10),
-          { role: "user", content: userMessage },
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return null;
-    const data: any = await res.json();
-    const text = data?.choices?.[0]?.message?.content;
-    return typeof text === "string" && text.trim() ? text.trim() : null;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const base = env.omniRouteBaseUrl.replace(/\/$/, "");
+      const res = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(env.omniRouteApiKey ? { Authorization: `Bearer ${env.omniRouteApiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: env.omniRouteModel || undefined,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT + (context ? `\n\nContext about the user's files:\n${context}` : "") },
+            ...history.slice(-10),
+            { role: "user", content: userMessage },
+          ],
+          temperature: 0.7,
+          max_tokens: 500,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.status === 429 || res.status >= 500) {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
+      if (!res.ok) return null;
+      const data: any = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      return typeof text === "string" && text.trim() ? text.trim() : null;
+    } catch {
+      if (attempt === 2) return null;
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
   }
+  return null;
 }
